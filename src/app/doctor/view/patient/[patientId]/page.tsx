@@ -31,6 +31,81 @@ import { db } from '@/lib/firebase';
 import { doc, collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from 'firebase/firestore';
 import {  deleteDoc } from 'firebase/firestore';
 
+function inferMimeFromName(name: string): string {
+  const ext = name.toLowerCase().split('.').pop() || '';
+  const map: Record<string, string> = {
+    pdf: 'application/pdf',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+    heic: 'image/heic',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+async function fileToDataUriWithCorrectMime(file: File): Promise<string> {
+  // Read as DataURL
+  const dataUrl = await new Promise<string>((res, rej) => {
+    const r = new FileReader();
+    r.onerror = () => rej(new Error('File read failed'));
+    r.onload = () => res(r.result as string);
+    r.readAsDataURL(file);
+  });
+
+  // If browser returned a generic or empty MIME, patch it using filename
+  const goodMime = file.type && file.type !== 'application/octet-stream'
+    ? file.type
+    : inferMimeFromName(file.name);
+
+  if (dataUrl.startsWith('data:application/octet-stream;') || dataUrl.startsWith('data:;')) {
+    return dataUrl.replace(/^data:(?:application\/octet-stream|);/i, `data:${goodMime};`);
+  }
+  // Also handle weird cases like 'data:binary/octet-stream'
+  if (dataUrl.startsWith('data:binary/octet-stream;')) {
+    return dataUrl.replace(/^data:binary\/octet-stream;/i, `data:${goodMime};`);
+  }
+  return dataUrl;
+}
+
+
+// --- NEW: local PDF upload state for Gemini ---
+type LocalPatientFile = { fileName: string; fileDataUri: string };
+
+const [uploadedFiles, setUploadedFiles] = useState<LocalPatientFile[]>([]);
+
+function fileToDataUri(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('File read failed'));
+    reader.onload = () => resolve(reader.result as string);
+    reader.readAsDataURL(file); // produces data:<mime>;base64,<...>
+  });
+}
+
+async function handleLocalFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
+  const files = e.target.files;
+  if (!files || files.length === 0) return;
+
+  const accepted = Array.from(files).filter(
+    f => f.type === 'application/pdf' || f.type.startsWith('image/')
+  );
+  const pairs: LocalPatientFile[] = [];
+  for (const f of accepted) {
+    const dataUri = await fileToDataUri(f);
+    pairs.push({ fileName: f.name, fileDataUri: dataUri });
+  }
+  setUploadedFiles(prev => [...prev, ...pairs]);
+}
+
+function removeUploaded(idx: number) {
+  setUploadedFiles(prev => prev.filter((_, i) => i !== idx));
+}
+
+
 const recordIcons: Record<HealthRecord['type'], React.ReactNode> = {
   PDF: <FileText className="size-5 text-blue-500" />,
   Imaging: <ImageIcon className="size-5 text-purple-500" />,
@@ -131,31 +206,39 @@ const isExpired = (() => {
   }, [healthRecords, consultations]);
 
 
-  const handleGenerateSummary = async () => {
-    setIsLoading(true);
-    setSummary(null);
-    setError(null);
-    
-    try {
-      const result = await summarizePatientFiles({
-        patientFiles: healthRecords.map(r => ({
-            fileName: r.name,
-            fileDataUri: `data:text/plain;base64,${btoa(`Mock content for file: ${r.name} of type ${r.type}`)}`
-        })),
-        consultationNotes: consultations.map(c => ({
-            doctor: c.doctor,
-            date: c.date,
-            notes: c.notes,
-        }))
-      });
-      setSummary(result);
-    } catch (e) {
-      console.error(e);
-      setError('Failed to generate summary. The AI model might be unavailable. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+ const handleGenerateSummary = async () => {
+  setIsLoading(true);
+  setSummary(null);
+  setError(null);
+
+try {
+  const result = await summarizePatientFiles({
+    patientFiles:
+      uploadedFiles.length > 0
+        ? uploadedFiles
+        : healthRecords.map(r => ({
+            fileName: r.name.endsWith('.txt') ? r.name : `${r.name}.txt`,
+            fileDataUri: `data:text/plain;base64,${btoa(
+              `No real file uploaded for ${r.name}.`
+            )}`,
+          })),
+    consultationNotes: consultations.map(c => ({
+      doctor: c.doctor,
+      date: c.date,
+      notes: c.notes,
+    })),
+  });
+  setSummary(result);
+} catch (e) {
+    console.error(e);
+    setError(
+      "Failed to generate summary. The AI model might be unavailable. Please try again."
+    );
+  } finally {
+    setIsLoading(false);
+  }
+};
+
   
   const handleAddConsultation = async () => {
       if (!newConsultation.notes || !patientId) return;
