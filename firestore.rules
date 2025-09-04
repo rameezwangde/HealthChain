@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Choose your doctor check:
+    // A) Custom claim: request.auth.token.role == "doctor"
+    function isDoctorByClaim() {
+      return isSignedIn() && request.auth.token.role == "doctor";
+    }
+    // B) Or user doc flag: /users/{uid}.role == "doctor"
+    function isDoctorByUserDoc() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "doctor";
+    }
+    function isDoctor() {
+      return isDoctorByClaim() || isDoctorByUserDoc();
+    }
+
+    // Users + subcollections (same as yours)
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+
+      match /{subcollection}/{docId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /sharedSessions/{sessionId} {
+      // CREATE: patient creates a doc with ID == sessionId and a future expiresAt
+      allow create: if isSignedIn()
+                    && request.resource.data.patientId == request.auth.uid
+                    && request.resource.data.sessionId == sessionId
+                    && request.resource.data.expiresAt is timestamp
+                    && request.resource.data.expiresAt > request.time;
+
+      // READ: only doctors, and only if not expired
+      allow read: if isDoctor()
+                  && resource.data.expiresAt is timestamp
+                  && resource.data.expiresAt > request.time;
+
+      // DELETE: only doctors (for single-use cleanup)
+      allow delete: if isDoctor();
+
+      // No updates
+      allow update: if false;
+    }
+  }
+}
