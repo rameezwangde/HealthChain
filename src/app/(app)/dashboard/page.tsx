@@ -120,34 +120,28 @@ function ShareHistoryDialog() {
   const [generatedLink, setGeneratedLink] = useState('');
 
   const handleGenerateLink = async () => {
-    if (!user) return;
-    setIsGenerating(true);
-    try {
+  if (!user) return;
+  setIsGenerating(true);
+  try {
     const sessionId = uuidv4();
 
-    // ✅ new code here
     const sessionRef = doc(collection(db, 'sharedSessions'), sessionId);
-    const expiresAt = Timestamp.fromDate(new Date(Date.now() + 15 * 60 * 1000));
+
     await setDoc(sessionRef, {
-        sessionId,    
       patientId: user.uid,
       createdAt: serverTimestamp(),
-       expiresAt
+      expiresAt: Timestamp.fromDate(new Date(Date.now() + 15 * 60 * 1000)), // ✅ 15 minutes
     });
 
     const link = `${window.location.origin}/doctor/view/patient/${sessionId}`;
     setGeneratedLink(link);
-    } catch(e) {
-        console.error("Error creating share link", e);
-        toast({
-            variant: 'destructive',
-            title: 'Error',
-            description: 'Could not generate a shareable link. Please try again.'
-        });
-    } finally {
-        setIsGenerating(false);
-    }
+  } catch (e) {
+    console.error('Error creating share link', e);
+    // show toast if needed
+  } finally {
+    setIsGenerating(false);
   }
+};
 
   const handleLinkCopy = () => {
     if (!generatedLink) return;

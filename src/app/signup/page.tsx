@@ -1,10 +1,10 @@
 'use client';
 
-import {useState} from 'react';
-import {useRouter} from 'next/navigation';
-import {useCreateUserWithEmailAndPassword} from 'react-firebase-hooks/auth';
-import {auth, db} from '@/lib/firebase';
-import {Button} from '@/components/ui/button';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCreateUserWithEmailAndPassword } from 'react-firebase-hooks/auth';
+import { auth, db } from '@/lib/firebase';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -13,13 +13,13 @@ import {
   CardTitle,
   CardFooter,
 } from '@/components/ui/card';
-import {Input} from '@/components/ui/input';
-import {Label} from '@/components/ui/label';
-import {Loader2} from 'lucide-react';
-import {Alert, AlertDescription} from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Loader2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import Link from 'next/link';
-import {doc, setDoc, collection, writeBatch} from 'firebase/firestore';
-import {healthRecords, consultations} from '@/lib/data';
+import { doc, setDoc, collection, writeBatch } from 'firebase/firestore';
+import { healthRecords, consultations } from '@/lib/data';
 
 export default function SignUpPage() {
   const [email, setEmail] = useState('');
@@ -29,44 +29,48 @@ export default function SignUpPage() {
     useCreateUserWithEmailAndPassword(auth);
   const router = useRouter();
 
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const newUser = await createUserWithEmailAndPassword(email, password);
-    if (newUser) {
-      // Create user document in Firestore
-      const userDocRef = doc(db, 'users', newUser.user.uid);
-      await setDoc(userDocRef, {
-        uid: newUser.user.uid,
-        name: name,
-        email: email,
-        role: 'patient',
-        photoURL: `https://i.pravatar.cc/150?u=${newUser.user.uid}`,
-      });
-
-      // Batch write initial data
-      const batch = writeBatch(db);
-      const healthRecordsRef = collection(db, 'users', newUser.user.uid, 'healthRecords');
-      healthRecords.forEach((record) => {
-          const docRef = doc(healthRecordsRef);
-          batch.set(docRef, record);
-      });
-      
-      const consultationsRef = collection(db, 'users', newUser.user.uid, 'consultations');
-      consultations.forEach((consultation) => {
-          const docRef = doc(consultationsRef);
-          batch.set(docRef, consultation);
-      });
-      
-      await batch.commit();
-
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (user) {
       router.push('/dashboard');
     }
-  };
+  }, [user, router]);
 
-  if (user) {
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const newUser = await createUserWithEmailAndPassword(email, password);
+    if (!newUser) return;
+
+    // Create user document in Firestore
+    const userDocRef = doc(db, 'users', newUser.user.uid);
+    await setDoc(userDocRef, {
+      uid: newUser.user.uid,
+      name: name,
+      email: email,
+      role: 'patient',
+      photoURL: `https://i.pravatar.cc/150?u=${newUser.user.uid}`,
+    });
+
+    // Batch write initial data
+    const batch = writeBatch(db);
+
+    const healthRecordsRef = collection(db, 'users', newUser.user.uid, 'healthRecords');
+    healthRecords.forEach((record) => {
+      const docRef = doc(healthRecordsRef);
+      batch.set(docRef, record);
+    });
+
+    const consultationsRef = collection(db, 'users', newUser.user.uid, 'consultations');
+    consultations.forEach((consultation) => {
+      const docRef = doc(consultationsRef);
+      batch.set(docRef, consultation);
+    });
+
+    await batch.commit();
+
     router.push('/dashboard');
-    return null;
-  }
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40">

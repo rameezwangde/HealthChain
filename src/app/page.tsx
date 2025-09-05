@@ -1,28 +1,41 @@
 'use client';
 
-import {useAuthState} from 'react-firebase-hooks/auth';
-import {auth} from '@/lib/firebase';
-import {useRouter} from 'next/navigation';
-import {useEffect} from 'react';
-import {Loader2} from 'lucide-react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '@/lib/firebase';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 
-export default function Home() {
+export default function HomePage() {
   const [user, loading] = useAuthState(auth);
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading) {
-      if (user) {
-        router.push('/dashboard');
-      } else {
-        router.push('/login');
-      }
+    if (user) {
+      router.replace('/dashboard');
     }
-  }, [user, loading, router]);
+  }, [user, router]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p>Loading...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-screen w-full items-center justify-center">
-      <Loader2 className="h-12 w-12 animate-spin text-primary" />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40">
+      <h1 className="text-3xl font-bold mb-6">Welcome to Our App</h1>
+      <div className="flex gap-4">
+        <Link href="/login">
+          <Button>Login</Button>
+        </Link>
+        <Link href="/signup">
+          <Button variant="outline">Sign Up</Button>
+        </Link>
+      </div>
     </div>
   );
 }

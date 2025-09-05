@@ -146,7 +146,20 @@ const isExpired = (() => {
   const [isSpeechRecognitionSupported, setIsSpeechRecognitionSupported] = useState(false);
   
   const doctor = doctors[0];
-  
+  useEffect(() => {
+  if (!loadingSession && session?.exists() && isExpired) {
+    (async () => {
+      try {
+        await deleteDoc(doc(db, "sharedSessions", sessionId));
+      } catch (e) {
+        console.error("Lazy cleanup failed:", e);
+      }
+    })();
+  }
+}, [loadingSession, isExpired, session, sessionId]);
+if (loadingSession || loadingPatient || loadingRecords || loadingConsultations) {
+  return <div>Loading…</div>;
+}
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
